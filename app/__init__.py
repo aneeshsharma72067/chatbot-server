@@ -10,7 +10,7 @@ load_dotenv()
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
-CORS(app,resources={r"/*":{"origins":"http://localhost:3000"}},supports_credentials=True)
+CORS(app,resources={r"/*":{"origins":"https://chatbot-client-drab.vercel.app/"}},supports_credentials=True)
 
 app.register_blueprint(bp)
 
