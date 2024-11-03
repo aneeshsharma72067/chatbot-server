@@ -39,6 +39,12 @@ def login_required(f):
     
     return decorated_function
 
+
+
+@bp.route('/', methods=['GET'])
+def index():
+    return {"message":"AI Chatbot Assistant API"}
+
 @bp.route('/register', methods=['POST'])
 def register():
     data = request.json

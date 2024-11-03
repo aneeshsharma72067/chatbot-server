@@ -1,3 +1,5 @@
 .env
 queries.sql
 __pycache__/
+.vercel
+venv
