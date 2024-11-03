@@ -126,7 +126,7 @@ def logout():
 def create_chat():
     token = request.cookies.get('auth_token')
     if not token:
-        return jsonify({"error": "Unauthorized"}), 401
+        return jsonify({"error": "Auth Token Not found"}), 401
     try:
         decoded_token = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
         user_id = decoded_token.get("user_id")
