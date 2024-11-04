@@ -9,6 +9,7 @@ from sqlalchemy import desc
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 bp = Blueprint('main',__name__)
 
@@ -19,25 +20,25 @@ genai.configure(api_key=os.getenv('GOOGLE_GENAI_API_KEY'))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        token = request.cookies.get('auth_token')
+# def login_required(f):
+#     @wraps(f)
+#     def decorated_function(*args, **kwargs):
+#         token = request.cookies.get('auth_token')
         
-        if not token:
-            return jsonify({"error" : "Unathorized"}),400  # Redirect to login if no token is found
+#         if not token:
+#             return jsonify({"error" : "Unathorized"}),400  # Redirect to login if no token is found
 
-        try:
-            # Verify the token
-            jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        except jwt.ExpiredSignatureError:
-            return jsonify({"error": "Token has expired"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"error": "Invalid token"}), 401
+#         try:
+#             # Verify the token
+#             jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+#         except jwt.ExpiredSignatureError:
+#             return jsonify({"error": "Token has expired"}), 401
+#         except jwt.InvalidTokenError:
+#             return jsonify({"error": "Invalid token"}), 401
 
-        return f(*args, **kwargs)  # Proceed to the route if token is valid
+#         return f(*args, **kwargs)  # Proceed to the route if token is valid
     
-    return decorated_function
+#     return decorated_function
 
 
 
@@ -59,15 +60,15 @@ def register():
     try:    
         hashed_password = generate_password_hash(password)
         new_user = User(username=username, password_hash=hashed_password)
-        
+
         db.session.add(new_user)
         db.session.commit()
 
-        token = jwt.encode({"user_id": new_user.id, "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)}, Config.SECRET_KEY, algorithm="HS256")
-
-        resp = make_response({"message": "User registered successfully", "user":{"username":new_user.username,"id":new_user.id,"created_at":new_user.created_at}})
-        expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
-        resp.set_cookie('auth_token', token, httponly=True, secure=True,expires=expires,max_age=86400)
+        # token = jwt.encode({"user_id": new_user.id, "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)}, Config.SECRET_KEY, algorithm="HS256")
+        # expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+        access_token = create_access_token(identity=new_user.id)
+        resp = make_response({"message": "User registered successfully","token":access_token, "user":{"username":new_user.username,"id":new_user.id,"created_at":new_user.created_at}})
+        # resp.set_cookie('auth_token', token, httponly=True, secure=True,expires=expires,max_age=86400)
         return resp, 201
     except:
         return jsonify({"error":"Something went wrong"}), 500
@@ -81,10 +82,11 @@ def login():
     user = User.query.filter_by(username=username).first()
 
     if user and check_password_hash(user.password_hash, password):
-        token = jwt.encode({"user_id": user.id, "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)}, Config.SECRET_KEY, algorithm="HS256")
-        resp = make_response({"message": "Login successful", "user":{"username":user.username,"id":user.id,"created_at":user.created_at}})
-        expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
-        resp.set_cookie('auth_token', token, httponly=True, secure=True,expires=expires,max_age=86400)
+        # token = jwt.encode({"user_id": user.id, "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)}, Config.SECRET_KEY, algorithm="HS256")
+        access_token = create_access_token(identity=user.id)
+        resp = make_response({"message": "Login successful", "token":access_token, "user":{"username":user.username,"id":user.id,"created_at":user.created_at}})
+        # expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+        # resp.set_cookie('auth_token', token, httponly=True, secure=True,expires=expires,max_age=86400)
         return resp
     return jsonify({"error": "Invalid credentials"}), 401
 
@@ -93,26 +95,21 @@ def test():
     return jsonify({'msg':'hey'}),200
 
 @bp.route('/auth-check', methods=['GET'])
+@jwt_required()
 def checkAuth():
-    token = request.cookies.get('auth_token')  # Retrieve the JWT from the cookie
-    
-    if not token:
-        return jsonify({"error": "Unauthorized"}), 400
-
     try:
         # Decode the JWT to verify its validity
-        decoded_token = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        user_id = decoded_token.get("user_id")
+        user_id = get_jwt_identity()
         if user_id is None:
+            print('User ID not found in token')
             return jsonify({"error":"User ID not found in token"}), 400
         # Retrieve user data (from a database, here we use a placeholder)
         user =  User.query.filter_by(id=user_id).first() # Example user data
         return jsonify({"user":{"username":user.username,"id":user.id,"created_at":user.created_at}})  # Return user data if the token is valid
     
-    except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token has expired"}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid token"}), 401
+    except Exception as e:
+        print(e)
+        return jsonify({"error": "Something went wrong !!"}), 401
 
 @bp.route('/logout', methods=['POST'])
 def logout():
@@ -122,14 +119,14 @@ def logout():
 
 
 @bp.route('/chats', methods=['POST'])
-@login_required
+@jwt_required()
 def create_chat():
-    token = request.cookies.get('auth_token')
-    if not token:
-        return jsonify({"error": "Auth Token Not found"}), 401
+    # token = request.cookies.get('auth_token')
+    # if not token:
+    #     return jsonify({"error": "Auth Token Not found"}), 401
     try:
-        decoded_token = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        user_id = decoded_token.get("user_id")
+        # decoded_token = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+        user_id = get_jwt_identity()
         
         data = request.json
         title = data.get('title')
@@ -145,34 +142,32 @@ def create_chat():
 
 
 @bp.route('/chats', methods=['GET'])
-@login_required
+@jwt_required()
 def get_chats():
-    token = request.cookies.get('auth_token')
-    if not token:
-        return jsonify({"error": "Unauthorized"}), 401
+    # token = request.cookies.get('auth_token')
+    # if not token:
+    #     return jsonify({"error": "Auth Token Not found"}), 401
 
     try:
-        decoded_token = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        user_id = decoded_token.get("user_id")
+        # decoded_token = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+        user_id = get_jwt_identity()
+        if not user_id:
+            print('user id not found')
+            return {'error':"User id not found"}, 400
 
         chats = Chat.query.filter_by(user_id=user_id).order_by(desc(Chat.created_at)).all()
         chat_list = [{"id": chat.id, "title": chat.title, 'created_at':chat.created_at} for chat in chats]
         return jsonify(chat_list), 200
 
-    except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token has expired"}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid token"}), 401
+    except Exception as e:
+        print(e)
+        return jsonify({"error": "Something Went Wrong"}), 401
     
 @bp.route('/chats/<chat_id>', methods=['PUT'])
-@login_required
+@jwt_required()
 def rename_chat(chat_id):
-    token = request.cookies.get('auth_token')
-    if not token:
-        return jsonify({"error": "Unauthorized"}), 401
     try:
-        decoded_token = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        user_id = decoded_token.get("user_id")
+        user_id = get_jwt_identity()
         
         chat = Chat.query.filter_by(id=chat_id, user_id=user_id).first()
         if not chat:
@@ -193,7 +188,7 @@ def rename_chat(chat_id):
 
 
 @bp.route('/chats/<chat_id>', methods=['DELETE'])
-@login_required
+@jwt_required()
 def delete_chat(chat_id):
     chat = Chat.query.filter_by(id=chat_id).first()
     if not chat:
@@ -208,7 +203,7 @@ def delete_chat(chat_id):
 
 
 @bp.route('/chats/<chat_id>/messages', methods=['GET'])
-@login_required
+@jwt_required()
 def get_messages(chat_id):
 
     messages = Message.query.filter_by(chat_id=chat_id).order_by(Message.created_at).all()
@@ -221,7 +216,7 @@ def get_messages(chat_id):
 
 
 @bp.route('/chats/<chat_id>/messages', methods=['POST'])
-@login_required
+@jwt_required()
 def send_message(chat_id):
    
     data = request.json
