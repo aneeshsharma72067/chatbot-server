@@ -79,10 +79,9 @@ def checkAuth():
         return jsonify({"error": "Something went wrong !!"}), 401
 
 @bp.route('/logout', methods=['POST'])
+@jwt_required()
 def logout():
-    response = make_response(jsonify({"message": "Logged out successfully"}))
-    response.set_cookie("auth_token", "", expires=0) 
-    return response
+    return jsonify({"message": "Logged out successfully"})
 
 
 @bp.route('/chats', methods=['POST'])
@@ -214,6 +213,9 @@ def send_message(chat_id):
 def gpt3_request(user_message: str):
     try:
         response = model.generate_content(user_message)
-        return response.text
+        if response.text:
+            return response.text
+        elif response.candidates[0].finish_reason == 'SAFETY':
+            return "Violet or sexually explicit content is not allowed"
     except Exception as e:
         return "Something Went Wrong"
