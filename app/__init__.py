@@ -12,7 +12,7 @@ app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
 jwt = JWTManager(app)
-CORS(app, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
 app.register_blueprint(bp)
 
 
